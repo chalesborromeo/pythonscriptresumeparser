@@ -1,0 +1,84 @@
+import pdfplumber
+import re
+import os
+import requests
+
+def extract_text_from_pdf(pdf_path):
+    """Extracts text from a PDF file using pdfplumber."""
+    with pdfplumber.open(pdf_path) as pdf:
+        text = ''
+        for page in pdf.pages:
+            page_text = page.extract_text() or ''  # Avoid NoneType error if no text is found
+            text += page_text + '\n'  # Ensure each page's text starts on a new line
+    return text
+
+def extract_information(resume_text):
+    """Extracts detailed information from resume text using refined regex patterns."""
+    
+    # Patterns to match different sections in the resume
+    section_patterns = {
+        "Education": r"(Education|Academic Background|Degrees)(.*?)(?=\n\s*\n|\n(Work Experience|Professional Experience|Employment History|Certifications|Skills|Projects|Objective)\s*:?)",
+        "Work Experience": r"(Work Experience|Professional Experience|Employment History)(.*?)(?=\n\s*\n|\n(Education|Certifications|Skills|Projects|Objective)\s*:?)",
+        "Certifications": r"(Certifications|Credentials|Licenses)(.*?)(?=\n\s*\n|\n(Education|Work Experience|Skills|Projects|Objective)\s*:?)",
+        "Skills": r"(Skills|Technical Skills|Core Competencies)(.*?)(?=\n\s*\n|\n(Education|Work Experience|Certifications|Projects|Objective)\s*:?)"
+    }
+
+    # Example patterns for extracting general information
+    name_pattern = re.compile(r"(Name:\s*)([A-Za-z ]+)", re.IGNORECASE)
+    email_pattern = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
+    phone_pattern = re.compile(r"\+?\d[\d -]{8,12}\d")
+
+    # Extract general information
+    name = name_pattern.search(resume_text)
+    email = email_pattern.search(resume_text)
+    phone = phone_pattern.search(resume_text)
+
+    # Initialize dictionary for storing extracted data
+    extracted_data = {
+        "Full Name": name.group(2) if name else "Not found",
+        "Email Address": email.group() if email else "Not found",
+        "Phone Number": phone.group() if phone else "Not found",
+        "Education": "Not found",
+        "Work Experience": "Not found",
+        "Certifications": "Not found",
+        "Skills": "Not found"
+    }
+
+    # Extract section information using regex patterns
+    for section, pattern in section_patterns.items():
+        match = re.search(pattern, resume_text, re.DOTALL | re.IGNORECASE)
+        if match:
+            extracted_data[section] = match.group(2).strip()
+
+    return extracted_data
+
+def send_to_zapier(webhook_url, data):
+    """Sends extracted resume data to Zapier using a POST request."""
+    response = requests.post(webhook_url, json=data)
+    if response.status_code == 200:
+        print("Data sent to Zapier successfully.")
+    else:
+        print(f"Failed to send data to Zapier. Status code: {response.status_code}")
+
+def process_resumes(directory_path, zapier_webhook_url):
+    """Processes all PDF resumes in a directory and sends the extracted information to Zapier."""
+    # Loop through all files in the directory
+    for filename in os.listdir(directory_path):
+        if filename.endswith('.pdf'):
+            pdf_path = os.path.join(directory_path, filename)
+            resume_text = extract_text_from_pdf(pdf_path)
+            extracted_info = extract_information(resume_text)
+            
+            # Send the extracted information to Zapier
+            send_to_zapier(zapier_webhook_url, extracted_info)
+            print(f"Data from {filename} has been processed and sent to Zapier.")
+
+if __name__ == "__main__":
+    # Directory path where resumes are stored
+    directory_path = 'resumes/'  # Ensure this path points to where your PDF resumes are stored
+
+    # Zapier Webhook URL
+    zapier_webhook_url = 'https://hooks.zapier.com/hooks/catch/19855108/26pngl6/'  # Replace with your actual Zapier webhook URL
+
+    # Process all resumes in the directory and send data to Zapier
+    process_resumes(directory_path, zapier_webhook_url)
